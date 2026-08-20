@@ -1,0 +1,38 @@
+# Maintainer: you <you@example.com>
+# PKGBUILD для CachyOS / Arch Linux
+pkgname=dine-git
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Mineways-style Minecraft world importer/renderer/exporter (native Linux, mod support)"
+arch=('x86_64')
+url="https://github.com/rezervkant-cmd/dine"
+license=('MIT')
+depends=('zlib' 'glfw' 'libgl')
+makedepends=('cmake' 'ninja' 'git' 'python')
+optdepends=('mimalloc: быстрый аллокатор (-DVW_USE_MIMALLOC=ON)')
+source=()   # локальная сборка: makepkg -e из корня репозитория
+
+build() {
+  cd "$startdir/.."
+  # CachyOS: обычно репозитории v3/v4 — согласуем march с системой.
+  # Для локальной машины native даёт максимум.
+  cmake -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DVW_MARCH="${VW_MARCH:-native}" \
+    -DVW_LTO=ON
+  cmake --build build
+}
+
+check() {
+  cd "$startdir/.."
+  python3 tests/make_test_world.py
+  python3 tests/gen_deco_test_jar.py tests/data/mods/decomini.jar
+  python3 tests/gen_vanilla_test_jar.py
+  ./build/vw_test_core tests/data
+  ./build/vw_test_models tests/data tests/out
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/dine "$pkgdir/usr/bin/dine"
+}
