@@ -16,6 +16,7 @@ endif()
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # Статическая линковка рантаймов — один .exe без DLL-зависимостей MinGW.
 add_link_options(-static -static-libgcc -static-libstdc++)

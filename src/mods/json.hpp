@@ -72,8 +72,7 @@ private:
                              *p_ == 'e' || *p_ == 'E' || *p_ == '-' || *p_ == '+')) ++p_;
         double d = 0;
         auto [ptr, ec] = std::from_chars(s, p_, d);
-        if (ec != std::errc{}) fail("bad number");
-        (void)ptr;
+        if (ec != std::errc{} || ptr != p_) fail("bad number");
         return Value{d};
     }
     std::string string() {

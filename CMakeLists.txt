@@ -86,7 +86,7 @@ endif()
 
 # Linker: у CachyOS по умолчанию mold/lld — используем, если есть
 # (только GCC/Clang: MSVC-линкер флаг -fuse-ld не понимает)
-if(NOT MSVC)
+if(NOT MSVC AND NOT CMAKE_CROSSCOMPILING)
   find_program(VW_MOLD mold)
   if(VW_MOLD)
     add_link_options(-fuse-ld=mold)

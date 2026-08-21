@@ -247,13 +247,17 @@ std::optional<Chunk> World::decode_chunk(const nbt::Document& doc, i32 cx, i32 c
             for (int qy = 0; qy < 4; ++qy)
                 for (int qz = 0; qz < 4; ++qz)
                     for (int qx = 0; qx < 4; ++qx) {
-                        int id;
-                        if (is3d)
-                            id = (*arr)[static_cast<size_t>(((sec.y * 4 + qy) << 4) |
-                                                            (qz << 2) | qx)];
-                        else
+                        int id = 0;
+                        if (is3d) {
+                            const i64 index = (static_cast<i64>(sec.y) * 4 + qy) * 16 +
+                                              qz * 4 + qx;
+                            if (index < 0 || static_cast<size_t>(index) >= arr->size())
+                                continue;
+                            id = (*arr)[static_cast<size_t>(index)];
+                        } else {
                             id = (*arr)[static_cast<size_t>(((qz * 4 + 1) << 4) |
                                                             (qx * 4 + 1))];
+                        }
                         sec.biomes[(qy << 4) | (qz << 2) | qx] =
                             biome_intern(std::string(legacy_biome_name(id)));
                     }
