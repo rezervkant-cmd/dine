@@ -41,6 +41,14 @@ public:
     void parallel_for(size_t begin, size_t end, F&& body, size_t grain = 1) {
         const size_t n = end - begin;
         if (n == 0) return;
+        // Защита от дедлока: если parallel_for вызван из потока-воркера
+        // пула (вложенный parallel_for / submit+get), выполняем работу
+        // инлайн. Иначе воркер заблокировал бы сам себя в f.get(),
+        // ожидая задачу, которую некому выполнить (пул исчерпан).
+        if (is_worker_thread()) {
+            for (size_t i = begin; i < end; ++i) body(i);
+            return;
+        }
         const size_t nw = workers_.size();
         const size_t chunk = std::max(grain, (n + nw - 1) / nw);
         std::vector<std::future<void>> futs;
@@ -54,6 +62,13 @@ public:
     unsigned size() const { return static_cast<unsigned>(workers_.size()); }
 
 private:
+    bool is_worker_thread() const {
+        const auto id = std::this_thread::get_id();
+        for (const auto& w : workers_)
+            if (w.get_id() == id) return true;
+        return false;
+    }
+
     void run(std::stop_token st) {
         while (true) {
             std::function<void()> job;

@@ -36,13 +36,16 @@ inline std::filesystem::path path_from_u8(const std::string& s) {
 }
 
 #ifdef _WIN32
+// Путь в UTF-8 для передачи в внешние утилиты (curl/wget).
+// Раньше использовался CP_ACP (ANSI code page): пути с кириллицей,
+// иероглифами или эмодзи в %USERPROFILE% превращались в кракозябры.
 inline std::string acp_str(const std::filesystem::path& p) {
     const std::wstring w = p.wstring();
     if (w.empty()) return {};
-    const int n = WideCharToMultiByte(CP_ACP, 0, w.data(), (int)w.size(),
+    const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(),
                                       nullptr, 0, nullptr, nullptr);
     std::string s(n > 0 ? n : 0, '\0');
-    if (n > 0) WideCharToMultiByte(CP_ACP, 0, w.data(), (int)w.size(),
+    if (n > 0) WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(),
                                    s.data(), n, nullptr, nullptr);
     return s;
 }

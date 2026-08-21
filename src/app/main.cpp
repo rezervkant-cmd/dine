@@ -389,9 +389,10 @@ void start_rebuild(AppState& st) {
     ThreadPool* pool = &st.pool;
     mods::AssetRegistry* assets = &st.assets;
     mods::ModelResolver* models = st.models.get();
-    st.build_future = std::async(std::launch::async,
-        [world, pool, assets, models, box, topts, texmode]() -> BuildResult {
-        BuildResult r;
+    try {
+        st.build_future = std::async(std::launch::async,
+            [world, pool, assets, models, box, topts, texmode]() -> BuildResult {
+            BuildResult r;
         r.box = box;
         auto chunks = world->load_area(*pool, box.x0 >> 4, box.z0 >> 4,
                                        box.x1 >> 4, box.z1 >> 4);
@@ -410,6 +411,13 @@ void start_rebuild(AppState& st) {
         r.palette_overflow = world->palette().overflowed();
         return r;
     });
+    } catch (const std::exception& e) {
+        // std::async может бросить (bad_alloc и т.п.) до возврата future —
+        // без этого сброса st.building остался бы true навсегда и кнопка
+        // «Перестроить» была бы заблокирована до перезапуска.
+        st.building = false;
+        st.status = std::string("Не удалось запустить построение: ") + e.what();
+    }
 }
 
 void start_map_build(AppState& st) {
@@ -425,11 +433,17 @@ void start_map_build(AppState& st) {
     anvil::World* world = st.world.get();
     const mods::AssetRegistry* assets = &st.assets;
     ThreadPool* pool = &st.pool;
-    st.map.future = std::async(std::launch::async,
-        [world, assets, cx, cz, r, pool]() -> render::TopMap {
-            return render::build_top_map(*world, assets, cx - r, cz - r,
-                                         cx + r - 1, cz + r - 1, 319, pool);
-        });
+    try {
+        st.map.future = std::async(std::launch::async,
+            [world, assets, cx, cz, r, pool]() -> render::TopMap {
+                return render::build_top_map(*world, assets, cx - r, cz - r,
+                                             cx + r - 1, cz + r - 1, 319, pool);
+            });
+    } catch (const std::exception& e) {
+        // См. start_rebuild: без сброса флаг map.building завис бы навсегда.
+        st.map.building = false;
+        st.status = std::string("Не удалось запустить построение карты: ") + e.what();
+    }
 }
 
 void load_world(AppState& st, const std::filesystem::path& path) {
@@ -747,12 +761,7 @@ void ui_frame(AppState& st) {
         if (ImGui::TreeNode("Топ блоков в сцене")) {
             const auto& q = st.tmesh.quads_by_block;
             std::vector<std::pair<u32, u16>> top;
-            for (size_t i = 0; i < q.size(); ++i)
-                if (q[i]) top.emplace_back(q[i], static_cast<u16>(i));
-            std::sort(top.rbegin(), top.rend());
-            for (size_t i = 0; i < std::min<size_t>(top.size(), 12); ++i)
-                ImGui::Text("%7u  %s", top[i].first,
-                            st.world->palette_get(top[i].second).name.c_str());
+      get(top[i].second).name.c_str());
             ImGui::TreePop();
         }
     } else {
@@ -785,9 +794,15 @@ void ui_frame(AppState& st) {
         ThreadPool* pool = &st.pool;
         // Фоновая задача не трогает AppState: результат применяется ниже,
         // уже в главном потоке.
-        st.mods_future = std::async(std::launch::async, [assets, pool, mods_dir, vanilla] {
-            return rebuild_assets_job(*assets, *pool, mods_dir, vanilla);
-        });
+        try {
+            st.mods_future = std::async(std::launch::async, [assets, pool, mods_dir, vanilla] {
+                return rebuild_assets_job(*assets, *pool, mods_dir, vanilla);
+            });
+        } catch (const std::exception& e) {
+            // Иначе st.scanning завис бы в true до перезапуска.
+            st.scanning = false;
+            st.vanilla_info = std::string("Не удалось запустить сканирование модов: ") + e.what();
+        }
     }
 
     if (st.scanning && st.mods_future.valid() &&
@@ -1089,7 +1104,7 @@ int main(int argc, char** argv) {
         const f32 dx = static_cast<f32>(mx - lx), dy = static_cast<f32>(my - ly);
         lx = mx; ly = my;
         if (!io.WantCaptureMouse && st.view_mode == 0) {
-            const bool lmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            const bool lmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFWPRESS;
             const bool mmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
             const bool rmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
             const bool shift = glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
@@ -1137,7 +1152,9 @@ int main(int argc, char** argv) {
     }
 
     st.renderer.destroy();
-    if (st.map.tex) glDeleteTextures(1, &st.map.tex);
+    // Обнуляем после удаления: иначе любая поздняя проверка
+    // `if (st.map.tex)` увидит висячий ID и сочтёт текстуру живой.
+    if (st.map.tex) { glDeleteTextures(1, &st.map.tex); st.map.tex = 0; }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -1145,3 +1162,4 @@ int main(int argc, char** argv) {
     glfwTerminate();
     return 0;
 }
+

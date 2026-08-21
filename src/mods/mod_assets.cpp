@@ -363,8 +363,13 @@ std::optional<std::string> AssetRegistry::resolve_block_texture(const std::strin
     }
 
     if (!result) {
+        // Если namespace отсутствует (block_id без ':'), подставляем minecraft: —
+        // иначе substr(npos + 1) == substr(0) и получался бы мусор "id:block/id".
         const auto colon = block_id.find(':');
-        const std::string guess = block_id.substr(0, colon) + ":block/" + block_id.substr(colon + 1);
+        const std::string guess =
+            colon == std::string::npos
+                ? "minecraft:block/" + block_id
+                : block_id.substr(0, colon) + ":block/" + block_id.substr(colon + 1);
         if (has_texture(guess)) result = guess;
     }
 

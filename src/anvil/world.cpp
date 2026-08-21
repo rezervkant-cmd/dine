@@ -160,10 +160,12 @@ std::vector<std::pair<i32, i32>> World::available_chunks() const {
     return out;
 }
 
-RegionFile* World::region_for(i32 cx, i32 cz) {
+RegionFile* World::region_for_locked(i32 cx, i32 cz) {
+    // Вызывается ТОЛЬКО под regions_mtx_: возвращаемый указатель валиден,
+    // пока поток удерживает мьютекс (set_dimension() очищает regions_
+    // под тем же мьютексом, поэтому UAF исключён).
     const i32 rx = cx >> 5, rz = cz >> 5;
     const u64 key = region_key(rx, rz);
-    std::lock_guard lk(regions_mtx_);
     if (auto it = regions_.find(key); it != regions_.end()) return it->second.get();
     auto p = region_root_ / ("r." + std::to_string(rx) + "." + std::to_string(rz) + ".mca");
     if (!fs::exists(p)) {
@@ -177,9 +179,16 @@ RegionFile* World::region_for(i32 cx, i32 cz) {
 }
 
 std::optional<Chunk> World::load_chunk(i32 cx, i32 cz) {
-    RegionFile* rf = region_for(cx, cz);
-    if (!rf) return std::nullopt;
-    auto doc = rf->read_chunk(cx & 31, cz & 31);
+    std::optional<nbt::Document> doc;
+    {
+        // Читаем чанк под тем же мьютексом, под которым set_dimension()
+        // очищает кэш регионов: сырая ссылка на RegionFile не может
+        // протухнуть на середине read_chunk().
+        std::lock_guard lk(regions_mtx_);
+        RegionFile* rf = region_for_locked(cx, cz);
+        if (!rf) return std::nullopt;
+        doc = rf->read_chunk(cx & 31, cz & 31);
+    }
     if (!doc) return std::nullopt;
     return decode_chunk(*doc, cx, cz);
 }

@@ -45,7 +45,9 @@ public:
     std::optional<Chunk> decode_chunk(const nbt::Document& doc, i32 cx, i32 cz);
 
 private:
-    RegionFile* region_for(i32 cx, i32 cz);
+    // Требует удержания regions_mtx_ (см. load_chunk): голый указатель
+    // без блокировки может стать висячим после set_dimension().
+    RegionFile* region_for_locked(i32 cx, i32 cz);
 
     std::filesystem::path root_;
     std::filesystem::path region_root_;

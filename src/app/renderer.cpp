@@ -251,9 +251,12 @@ void MCRenderer::draw(const Mat4& viewproj) {
 }
 
 void MCRenderer::destroy() {
-    if (vbo_) glDeleteBuffers(1, &vbo_);
-    if (ebo_) glDeleteBuffers(1, &ebo_);
-    if (vao_) glDeleteVertexArrays(1, &vao_);
+    // tex_ обязателен: иначе каждая загрузка мира утекает атлас в VRAM.
+    // Обнуляем ID после удаления, чтобы повторный destroy() был безопасен.
+    if (tex_) { glDeleteTextures(1, &tex_); tex_ = 0; }
+    if (vbo_) { glDeleteBuffers(1, &vbo_); vbo_ = 0; }
+    if (ebo_) { glDeleteBuffers(1, &ebo_); ebo_ = 0; }
+    if (vao_) { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
 }
 
 }

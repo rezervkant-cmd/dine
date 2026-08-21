@@ -222,7 +222,12 @@ bool ModelResolver::append_model(const std::string& model_ref, int rot_x, int ro
 
                     if (const auto* frt = fdef.get("rotation"))
                         mf.uv_rot = ((static_cast<int>(frt->num()) % 360) + 360) % 360;
-                    if (const auto* cf = fdef.get("cullface")) mf.cullface = !cf->is_string() || true;
+                    // В JSON cullface — это строка с именем грани ("north" и т.д.):
+                    // само наличие ключа включает отсечение. Старое выражение
+                    // `!cf->is_string() || true` было всегда true (мёртвый код),
+                    // что совпадает с семантикой "ключ есть => cull", но читаем так явно.
+                    if (const auto* cf = fdef.get("cullface"); cf && cf->is_string())
+                        mf.cullface = true;
                     if (const auto* ti = fdef.get("tintindex")) { (void)ti; mf.tint = true; }
                     if (const auto* sh2 = fdef.get("shade"); sh2 && std::holds_alternative<bool>(sh2->v))
                         mf.shade = std::get<bool>(sh2->v);

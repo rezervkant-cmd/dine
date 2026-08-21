@@ -250,7 +250,11 @@ std::vector<BlockRender> build_block_renders(const GlobalPalette& palette,
                     for (int f = 0; f < 6; ++f)
                         b.faces[f].tint = (f == FACE_UP);
 
-            if (!rm->full_cube && rm->boxes.size() <= 2) {
+            // Ограничение `boxes.size() <= 2` убрано: у забора/стены
+            // 9 боксов (пост + 8 направлений), и старое условие никогда
+            // не помечало их декором — фильтр «Скрыть декор» их пропускал.
+            // Многокомпонентные блоки теперь тоже оцениваются по объёму.
+            if (!rm->full_cube && !rm->boxes.empty()) {
                 f32 vol = 0;
                 for (auto& b : rm->boxes)
                     vol += (b.to[0]-b.from[0]) * (b.to[1]-b.from[1]) * (b.to[2]-b.from[2]);
