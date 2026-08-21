@@ -7,6 +7,7 @@
 #include "nbt/nbt.hpp"
 #include <zlib.h>
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -16,6 +17,10 @@
 
 using namespace vw;
 namespace fs = std::filesystem;
+
+namespace vw::mods::png {
+std::optional<TextureRGBA> decode(std::span<const u8> file);
+}
 
 static int failures = 0;
 #define CHECK(cond) do { \
@@ -165,6 +170,80 @@ int main(int argc, char** argv) {
 
         auto ok = json::parse("{\"a\": [1, 2, {\"b\": true}]}");
         CHECK(ok.obj() != nullptr);
+
+        bool partial_number_thrown = false;
+        try { (void)json::parse("[1+2]"); }
+        catch (const std::exception&) { partial_number_thrown = true; }
+        CHECK(partial_number_thrown);
+    }
+
+    // [P1] A short IHDR must not borrow bytes from following chunks.
+    {
+        auto put_be32 = [](std::vector<u8>& out, u32 v) {
+            out.push_back(static_cast<u8>(v >> 24));
+            out.push_back(static_cast<u8>(v >> 16));
+            out.push_back(static_cast<u8>(v >> 8));
+            out.push_back(static_cast<u8>(v));
+        };
+        auto put_chunk = [&](std::vector<u8>& out, const char type[4],
+                             std::span<const u8> payload) {
+            put_be32(out, static_cast<u32>(payload.size()));
+            out.insert(out.end(), type, type + 4);
+            out.insert(out.end(), payload.begin(), payload.end());
+            put_be32(out, 0); // The fallback decoder does not validate CRCs.
+        };
+
+        const std::array<u8, 8> signature{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+        std::vector<u8> malformed(signature.begin(), signature.end());
+        put_be32(malformed, 0);
+        malformed.insert(malformed.end(), {'I', 'H', 'D', 'R'});
+        put_be32(malformed, 1); // IHDR CRC bytes are incorrectly read as width.
+
+        // This fake following chunk supplies the remaining 9 IHDR bytes to the
+        // buggy decoder: height=1, depth=8, RGBA, no interlace.
+        put_be32(malformed, 1);
+        malformed.insert(malformed.end(), {8, 6, 0, 0});
+        malformed.push_back(0);
+        put_be32(malformed, 0);
+
+        std::array<u8, 5> scanline{0, 0x10, 0x20, 0x30, 0xff};
+        uLongf compressed_size = compressBound(static_cast<uLong>(scanline.size()));
+        std::vector<u8> compressed(compressed_size);
+        CHECK(compress2(compressed.data(), &compressed_size, scanline.data(),
+                        static_cast<uLong>(scanline.size()), 9) == Z_OK);
+        compressed.resize(compressed_size);
+        put_chunk(malformed, "IDAT", compressed);
+        put_chunk(malformed, "IEND", {});
+
+        CHECK(!mods::png::decode(malformed).has_value());
+    }
+
+    // [P1] A section outside the legacy 3D biome array must keep defaults.
+    {
+        nbt::Compound section;
+        section["Y"].v = i8{16}; // First biome index is 1024, one past this array.
+        section["Blocks"].v = std::vector<i8>(4096, 0);
+
+        nbt::List sections;
+        sections.elem = nbt::TagType::Compound;
+        nbt::Tag section_tag;
+        section_tag.v = std::move(section);
+        sections.items.push_back(std::move(section_tag));
+
+        nbt::Compound level;
+        level["Sections"].v = std::move(sections);
+        level["Biomes"].v = std::vector<i32>(1024, 1);
+
+        nbt::Compound root;
+        root["DataVersion"].v = i32{0};
+        root["Level"].v = std::move(level);
+        nbt::Document malformed_chunk;
+        malformed_chunk.root.v = std::move(root);
+
+        auto decoded = legacy.decode_chunk(malformed_chunk, 0, 0);
+        CHECK(decoded.has_value());
+        CHECK(decoded && decoded->sections.size() == 1);
+        CHECK(decoded && decoded->sections[0].biomes == std::vector<u8>(64, 0));
     }
 
     // [P1] Переполнение палитры — явная ошибка PaletteOverflow, а не тихая

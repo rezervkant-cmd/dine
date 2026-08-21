@@ -761,7 +761,12 @@ void ui_frame(AppState& st) {
         if (ImGui::TreeNode("Топ блоков в сцене")) {
             const auto& q = st.tmesh.quads_by_block;
             std::vector<std::pair<u32, u16>> top;
-      get(top[i].second).name.c_str());
+            for (size_t i = 0; i < q.size(); ++i)
+                if (q[i]) top.emplace_back(q[i], static_cast<u16>(i));
+            std::sort(top.rbegin(), top.rend());
+            for (size_t i = 0; i < std::min<size_t>(top.size(), 12); ++i)
+                ImGui::Text("%7u  %s", top[i].first,
+                            st.world->palette_get(top[i].second).name.c_str());
             ImGui::TreePop();
         }
     } else {
@@ -1104,7 +1109,7 @@ int main(int argc, char** argv) {
         const f32 dx = static_cast<f32>(mx - lx), dy = static_cast<f32>(my - ly);
         lx = mx; ly = my;
         if (!io.WantCaptureMouse && st.view_mode == 0) {
-            const bool lmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFWPRESS;
+            const bool lmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             const bool mmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
             const bool rmb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
             const bool shift = glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||

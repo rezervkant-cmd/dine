@@ -38,6 +38,7 @@ std::optional<TextureRGBA> decode(std::span<const u8> file) {
         const char* type = reinterpret_cast<const char*>(&file[p + 4]);
         const u8* d = &file[p + 8];
         if (!std::memcmp(type, "IHDR", 4)) {
+            if (len != 13) return std::nullopt;
             w = be32(d); h = be32(d + 4);
             bit_depth = d[8]; color_type = d[9]; interlace = d[12];
         } else if (!std::memcmp(type, "PLTE", 4)) {
