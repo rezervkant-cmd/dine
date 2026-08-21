@@ -4,7 +4,6 @@
 
 **Fast & modern Minecraft world viewer and exporter**
 
-[![License](https://img.shields.io/github/license/rezervkant-cmd/dine?style=flat-square&color=blue)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
 [![CMake](https://img.shields.io/badge/CMake-3.24%2B-blue?style=flat-square&logo=cmake)](https://cmake.org/)
 [![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B-blue?style=flat-square&logo=opengl)](https://www.opengl.org/)
@@ -106,10 +105,6 @@ Pull requests и issue приветствуются! Перед началом �
 2. Соблюдайте стиль кода проекта (C++20, `snake_case`)
 3. Убедитесь, что тесты проходят: `ctest`
 
-### 📜 Лицензия
-
-Проект распространяется под лицензией [MIT](LICENSE).
-
 ---
 
 ## 🇺🇸 EN
@@ -202,10 +197,6 @@ Pull requests and issues are welcome! Before contributing:
 1. Check existing issues
 2. Follow the project code style (C++20, `snake_case`)
 3. Make sure tests pass: `ctest`
-
-### 📜 License
-
-This project is licensed under the [MIT](LICENSE) License.
 
 ---
 
