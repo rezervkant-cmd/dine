@@ -13,6 +13,11 @@ jobs:
   core:
     name: Core (${{ matrix.build_type }}, ${{ matrix.sanitizer }})
     runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 200M
     strategy:
       fail-fast: false
       matrix:
@@ -24,10 +29,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-core-${{ matrix.build_type }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-core-${{ matrix.build_type }}-
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ zlib1g-dev python3
+          sudo apt-get install -y cmake ninja-build ccache g++ zlib1g-dev python3
 
       # Фикстуры генерирует цель vw_test_data (офлайн, детерминированно,
       # ровно один раз) — отдельный шаг здесь только дублировал бы работу.
@@ -38,10 +51,15 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DVW_BUILD_GUI=OFF
           -DVW_ENABLE_SANITIZERS=${{ matrix.sanitizer }}
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DVW_MARCH=off
 
       - name: Build
-        run: cmake --build build --parallel 2
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Compiler cache statistics
+        run: ccache --show-stats
 
       - name: Test
         env:
@@ -53,14 +71,40 @@ jobs:
     name: Package Linux x86-64
     needs: core
     runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 200M
+      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.cache/fetchcontent
     steps:
       - uses: actions/checkout@v6
+
+      - name: Restore fetched sources
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.FETCHCONTENT_BASE_DIR }}/glfw-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/glfw-subbuild
+            ${{ env.FETCHCONTENT_BASE_DIR }}/imgui-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/imgui-subbuild
+            ${{ env.FETCHCONTENT_BASE_DIR }}/stb-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/stb-subbuild
+          key: fetchcontent-linux-${{ hashFiles('CMakeLists.txt', 'cmake/Dependencies.cmake') }}
+
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-linux-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-linux-
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build g++ zlib1g-dev \
+            cmake ninja-build ccache g++ zlib1g-dev \
             libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev
 
@@ -70,11 +114,18 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DVW_BUILD_GUI=ON
           -DVW_BUILD_TESTS=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DFETCHCONTENT_BASE_DIR=${{ env.FETCHCONTENT_BASE_DIR }}
+          -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
           -DVW_MARCH=off
           -DVW_LTO=OFF
 
       - name: Compile
-        run: cmake --build build-linux --target dine --parallel 2
+        run: cmake --build build-linux --target dine --parallel "$(nproc)"
+
+      - name: Compiler cache statistics
+        run: ccache --show-stats
 
       - name: Verify binary
         run: |
@@ -85,11 +136,17 @@ jobs:
             exit 1
           fi
 
+      - name: Stage executable
+        run: |
+          mkdir -p "artifact/Dine Linux"
+          install -m755 build-linux/dine "artifact/Dine Linux/dine"
+          test "$(find artifact -type f | wc -l)" -eq 1
+
       - name: Upload executable
         uses: actions/upload-artifact@v7
         with:
           name: dine-linux-x86_64-ubuntu-24.04
-          path: build-linux/dine
+          path: artifact
           archive: true
           if-no-files-found: error
 
@@ -97,14 +154,45 @@ jobs:
     name: Package Windows x86-64
     needs: core
     runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 200M
+      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.cache/fetchcontent
     steps:
       - uses: actions/checkout@v6
+
+      - name: Restore fetched sources
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.FETCHCONTENT_BASE_DIR }}/glfw-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/glfw-subbuild
+            ${{ env.FETCHCONTENT_BASE_DIR }}/imgui-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/imgui-subbuild
+            ${{ env.FETCHCONTENT_BASE_DIR }}/stb-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/stb-subbuild
+            ${{ env.FETCHCONTENT_BASE_DIR }}/zlib_src-src
+            ${{ env.FETCHCONTENT_BASE_DIR }}/zlib_src-subbuild
+          key: fetchcontent-windows-${{ hashFiles('CMakeLists.txt', 'cmake/Dependencies.cmake', 'cmake/mingw-w64.cmake') }}
+
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-windows-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-windows-
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build mingw-w64
+            cmake ninja-build ccache \
+            binutils-mingw-w64-x86-64 \
+            g++-mingw-w64-x86-64-posix \
+            mingw-w64-x86-64-dev
 
       - name: Configure
         run: >-
@@ -113,11 +201,18 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DVW_BUILD_GUI=ON
           -DVW_BUILD_TESTS=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DFETCHCONTENT_BASE_DIR=${{ env.FETCHCONTENT_BASE_DIR }}
+          -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
           -DVW_MARCH=off
           -DVW_LTO=OFF
 
       - name: Compile
-        run: cmake --build build-windows --target dine --parallel 2
+        run: cmake --build build-windows --target dine --parallel "$(nproc)"
+
+      - name: Compiler cache statistics
+        run: ccache --show-stats
 
       - name: Verify binary
         run: |
@@ -127,10 +222,16 @@ jobs:
             exit 1
           fi
 
+      - name: Stage executable
+        run: |
+          mkdir -p "artifact/Dine Windows"
+          install -m755 build-windows/dine.exe "artifact/Dine Windows/dine.exe"
+          test "$(find artifact -type f | wc -l)" -eq 1
+
       - name: Upload executable
         uses: actions/upload-artifact@v7
         with:
           name: dine-windows-x86_64
-          path: build-windows/dine.exe
+          path: artifact
           archive: true
           if-no-files-found: error
