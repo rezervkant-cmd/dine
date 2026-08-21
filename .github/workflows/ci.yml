@@ -76,27 +76,21 @@ jobs:
       - name: Compile
         run: cmake --build build-linux --target dine --parallel 2
 
-      - name: Verify binary and create archive
+      - name: Verify binary
         run: |
-          mkdir package-linux
-          install -m755 build-linux/dine package-linux/dine
-          ldd build-linux/dine | tee package-linux/DEPENDENCIES.txt
-          if grep -q "not found" package-linux/DEPENDENCIES.txt; then
+          dependencies="$(ldd build-linux/dine)"
+          printf '%s\n' "$dependencies"
+          if grep -q "not found" <<< "$dependencies"; then
             echo "Some Linux runtime libraries are missing"
             exit 1
           fi
-          printf '%s\n' \
-            'Dine for Linux x86-64' \
-            'Built on Ubuntu 24.04; see DEPENDENCIES.txt for runtime libraries.' \
-            > package-linux/README.txt
-          tar -czf dine-linux-x86_64-ubuntu-24.04.tar.gz -C package-linux .
-          tar -tzf dine-linux-x86_64-ubuntu-24.04.tar.gz
 
-      - name: Upload archive
+      - name: Upload executable
         uses: actions/upload-artifact@v7
         with:
           name: dine-linux-x86_64-ubuntu-24.04
-          path: dine-linux-x86_64-ubuntu-24.04.tar.gz
+          path: build-linux/dine
+          archive: true
           if-no-files-found: error
 
   package-windows:
@@ -110,7 +104,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build mingw-w64 zip unzip
+            cmake ninja-build mingw-w64
 
       - name: Configure
         run: >-
@@ -125,19 +119,18 @@ jobs:
       - name: Compile
         run: cmake --build build-windows --target dine --parallel 2
 
-      - name: Verify binary and create archive
+      - name: Verify binary
         run: |
           x86_64-w64-mingw32-objdump -p build-windows/dine.exe | tee windows-imports.txt
           if grep -Eiq 'DLL Name: (libgcc_s_.*|libstdc\+\+-6|libwinpthread-1)\.dll' windows-imports.txt; then
             echo "Unexpected MinGW runtime DLL dependency"
             exit 1
           fi
-          zip -j dine-windows-x86_64.zip build-windows/dine.exe
-          unzip -t dine-windows-x86_64.zip
 
-      - name: Upload archive
+      - name: Upload executable
         uses: actions/upload-artifact@v7
         with:
           name: dine-windows-x86_64
-          path: dine-windows-x86_64.zip
+          path: build-windows/dine.exe
+          archive: true
           if-no-files-found: error
