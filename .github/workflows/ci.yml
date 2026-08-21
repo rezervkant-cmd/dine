@@ -48,3 +48,96 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build --output-on-failure
+
+  package-linux:
+    name: Package Linux x86-64
+    needs: core
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build g++ zlib1g-dev \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build-linux -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DVW_BUILD_GUI=ON
+          -DVW_BUILD_TESTS=OFF
+          -DVW_MARCH=off
+          -DVW_LTO=OFF
+
+      - name: Compile
+        run: cmake --build build-linux --target dine --parallel 2
+
+      - name: Verify binary and create archive
+        run: |
+          mkdir package-linux
+          install -m755 build-linux/dine package-linux/dine
+          ldd build-linux/dine | tee package-linux/DEPENDENCIES.txt
+          if grep -q "not found" package-linux/DEPENDENCIES.txt; then
+            echo "Some Linux runtime libraries are missing"
+            exit 1
+          fi
+          printf '%s\n' \
+            'Dine for Linux x86-64' \
+            'Built on Ubuntu 24.04; see DEPENDENCIES.txt for runtime libraries.' \
+            > package-linux/README.txt
+          tar -czf dine-linux-x86_64-ubuntu-24.04.tar.gz -C package-linux .
+          tar -tzf dine-linux-x86_64-ubuntu-24.04.tar.gz
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: dine-linux-x86_64-ubuntu-24.04
+          path: dine-linux-x86_64-ubuntu-24.04.tar.gz
+          if-no-files-found: error
+
+  package-windows:
+    name: Package Windows x86-64
+    needs: core
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build mingw-w64 zip unzip
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build-windows -G Ninja
+          -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
+          -DCMAKE_BUILD_TYPE=Release
+          -DVW_BUILD_GUI=ON
+          -DVW_BUILD_TESTS=OFF
+          -DVW_MARCH=off
+          -DVW_LTO=OFF
+
+      - name: Compile
+        run: cmake --build build-windows --target dine --parallel 2
+
+      - name: Verify binary and create archive
+        run: |
+          x86_64-w64-mingw32-objdump -p build-windows/dine.exe | tee windows-imports.txt
+          if grep -Eiq 'DLL Name: (libgcc_s_.*|libstdc\+\+-6|libwinpthread-1)\.dll' windows-imports.txt; then
+            echo "Unexpected MinGW runtime DLL dependency"
+            exit 1
+          fi
+          zip -j dine-windows-x86_64.zip build-windows/dine.exe
+          unzip -t dine-windows-x86_64.zip
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: dine-windows-x86_64
+          path: dine-windows-x86_64.zip
+          if-no-files-found: error
